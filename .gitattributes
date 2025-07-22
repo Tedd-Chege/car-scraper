@@ -1,0 +1,6 @@
+# enforce LF for all source files:
+* text=auto eol=lf
+
+# but leave binaries alone
+*.png binary
+*.jpg binary
