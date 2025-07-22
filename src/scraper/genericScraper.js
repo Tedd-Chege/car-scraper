@@ -11,15 +11,22 @@ export default async function genericScraper(siteKey, filters) {
   if (!cfg) throw new Error(`No config for site "${siteKey}"`);
 
   console.log(`🔎 Scraping ${siteKey} — filters:`, filters);
-  const browser = await puppeteer.launch({ headless: true });
-  const page    = await browser.newPage();
+
+  // ⚙️ Use system Chromium & disable sandbox for hosted Linux environments
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: '/usr/bin/chromium',
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  const page = await browser.newPage();
 
   const firstPath = cfg.pathTemplate(filters);
-  let pageNum     = 1;
-  const seen      = new Map();
+  let pageNum = 1;
+  const seen = new Map();
 
   while (pageNum <= cfg.maxPages) {
-    const url = cfg.baseUrl + firstPath.replace(/(page[_]?number=|page=)\d+/, m => m.replace(/\d+/, pageNum));
+    const url = cfg.baseUrl +
+      firstPath.replace(/(page[_]?number=|page=)\d+/, m => m.replace(/\d+/, pageNum));
     console.log(`→ [${siteKey} | Page ${pageNum}] loading ${url}`);
 
     try {
@@ -33,34 +40,28 @@ export default async function genericScraper(siteKey, filters) {
 
     const cards = await page.$$(cfg.cardSelector);
     console.log(`   ↳ found ${cards.length} card elements`);
-
     if (cards.length === 0) break;
 
-    // debug sample
     const sampleRaw = await page.$$eval(
       `${cfg.cardSelector} ${cfg.fieldSelectors.price || ''}`,
       els => els[0]?.innerText.trim() || '<none>'
     );
     console.log(`   ↳ SAMPLE rawPrice/text: "${sampleRaw}"`);
 
-    // extract listings
     const listings = await page.$$eval(
       cfg.cardSelector,
       (cards, selectors, base, site) => {
         return cards.map(card => {
           try {
-            // parse title
             const rawTitle = card.querySelector(selectors.title)?.innerText.trim() || '';
             const parts = rawTitle.split(' ');
-            const year = parseInt(parts[0], 10) || null;
-            const make = parts[1] || null;
+            const year  = parseInt(parts[0], 10) || null;
+            const make  = parts[1] || null;
             const model = parts.slice(2).join(' ') || null;
 
-            // parse price
             const rawPrice = card.querySelector(selectors.price)?.innerText || '';
             const priceKES = parseInt(rawPrice.replace(/[^0-9]/g, ''), 10) || null;
 
-            // link
             let href;
             if (site === 'jiji') {
               href = card.href;
