@@ -1,4 +1,5 @@
 // src/scraper/genericScraper.js
+import fs from 'fs';
 import puppeteer from 'puppeteer';
 import { siteConfigs } from '../config/siteConfig.js';
 
@@ -12,20 +13,23 @@ export default async function genericScraper(siteKey, filters) {
 
   console.log(`🔎 Scraping ${siteKey} — filters:`, filters);
 
-  const isProd = process.env.NODE_ENV === 'production';
+  // figure out which Chromium to launch
+  let executablePath;
+  if (fs.existsSync('/usr/bin/chromium')) {
+    executablePath = '/usr/bin/chromium';
+  } else if (fs.existsSync('/usr/bin/chromium-browser')) {
+    executablePath = '/usr/bin/chromium-browser';
+  } else {
+    console.log('⚙️  No system Chrome detected, using Puppeteer\'s bundled Chromium');
+  }
 
-  // build launch options
   const launchOpts = {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    ...(executablePath && { executablePath })
   };
 
-  if (isProd) {
-    // on Render (or similar Linux hosts) point to system Chromium
-    launchOpts.executablePath = '/usr/bin/chromium-browser';
-  }
-  // locally, omit executablePath so Puppeteer falls back to its own download under node_modules
-
+  console.log('⚙️  Launch options:', launchOpts);
   const browser = await puppeteer.launch(launchOpts);
   const page    = await browser.newPage();
 
@@ -49,7 +53,7 @@ export default async function genericScraper(siteKey, filters) {
 
     const cards = await page.$$(cfg.cardSelector);
     console.log(`   ↳ found ${cards.length} card elements`);
-    if (cards.length === 0) break;
+    if (!cards.length) break;
 
     const sampleRaw = await page.$$eval(
       `${cfg.cardSelector} ${cfg.fieldSelectors.price || ''}`,
@@ -62,32 +66,26 @@ export default async function genericScraper(siteKey, filters) {
       (cards, selectors, base, site) => {
         return cards.map(card => {
           try {
-            // title parts
             const rawTitle = card.querySelector(selectors.title)?.innerText.trim() || '';
             const parts    = rawTitle.split(' ');
-            const year     = parseInt(parts[0], 10) || null;
+            const year     = parseInt(parts[0],10) || null;
             const make     = parts[1] || null;
             const model    = parts.slice(2).join(' ') || null;
 
-            // price
             const rawPrice = card.querySelector(selectors.price)?.innerText || '';
-            const priceKES = parseInt(rawPrice.replace(/[^0-9]/g, ''), 10) || null;
+            const priceKES = parseInt(rawPrice.replace(/[^0-9]/g, ''),10) || null;
 
-            // link
             let href;
-            if (site === 'jiji') {
-              href = card.href;
-            } else {
-              href = card.querySelector(selectors.link)?.getAttribute('href') || '';
-            }
+            if (site==='jiji') href = card.href;
+            else href = card.querySelector(selectors.link)?.getAttribute('href')||'';
             const detailsURL = href ? new URL(href, base).href : null;
             if (!detailsURL) return null;
 
             return { site, year, make, model, priceKES, detailsURL };
-          } catch (_) {
+          } catch {
             return null;
           }
-        }).filter(x => x);
+        }).filter(x=>x);
       },
       cfg.fieldSelectors,
       cfg.baseUrl,
@@ -95,7 +93,7 @@ export default async function genericScraper(siteKey, filters) {
     );
 
     console.log(`   ↳ page ${pageNum} → scraped ${listings.length} listings`);
-    listings.forEach(l => seen.set(l.detailsURL, l));
+    listings.forEach(l=>seen.set(l.detailsURL,l));
     pageNum++;
   }
 
