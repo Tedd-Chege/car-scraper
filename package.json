@@ -8,11 +8,6 @@
   "build": "echo \"No build step\"",
   "start": "node index.js",
       "dev": "nodemon index.js",
-<<<<<<< HEAD
-       
-=======
-       "build": "echo \"No build step\"",
->>>>>>> 188ce2ee09e0c55ae13c0075e7c6150b444b0d24
       "test": "jest",
       "jest": {
          "testEnvironment": "node",
