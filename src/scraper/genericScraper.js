@@ -12,17 +12,26 @@ export default async function genericScraper(siteKey, filters) {
 
   console.log(`🔎 Scraping ${siteKey} — filters:`, filters);
 
-  // ⚙️ Use system Chromium & disable sandbox for hosted Linux environments
-  const browser = await puppeteer.launch({
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // build launch options
+  const launchOpts = {
     headless: true,
-    executablePath: '/usr/bin/chromium',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-  const page = await browser.newPage();
+  };
+
+  if (isProd) {
+    // on Render (or similar Linux hosts) point to system Chromium
+    launchOpts.executablePath = '/usr/bin/chromium-browser';
+  }
+  // locally, omit executablePath so Puppeteer falls back to its own download under node_modules
+
+  const browser = await puppeteer.launch(launchOpts);
+  const page    = await browser.newPage();
 
   const firstPath = cfg.pathTemplate(filters);
-  let pageNum = 1;
-  const seen = new Map();
+  let pageNum     = 1;
+  const seen      = new Map();
 
   while (pageNum <= cfg.maxPages) {
     const url = cfg.baseUrl +
@@ -53,15 +62,18 @@ export default async function genericScraper(siteKey, filters) {
       (cards, selectors, base, site) => {
         return cards.map(card => {
           try {
+            // title parts
             const rawTitle = card.querySelector(selectors.title)?.innerText.trim() || '';
-            const parts = rawTitle.split(' ');
-            const year  = parseInt(parts[0], 10) || null;
-            const make  = parts[1] || null;
-            const model = parts.slice(2).join(' ') || null;
+            const parts    = rawTitle.split(' ');
+            const year     = parseInt(parts[0], 10) || null;
+            const make     = parts[1] || null;
+            const model    = parts.slice(2).join(' ') || null;
 
+            // price
             const rawPrice = card.querySelector(selectors.price)?.innerText || '';
             const priceKES = parseInt(rawPrice.replace(/[^0-9]/g, ''), 10) || null;
 
+            // link
             let href;
             if (site === 'jiji') {
               href = card.href;
